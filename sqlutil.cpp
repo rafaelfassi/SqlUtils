@@ -3,7 +3,7 @@
 
 bool SqlRelation::isValid()
 {
-    return (m_parent != NULL); //TODO condicoes para a relacao ser valida
+    return (m_parent != NULL && !(m_tableName.isNull() || m_indexColumn.isNull() || m_displayColumn.isNull()));
 }
 
 void SqlRelation::populateModel()
@@ -14,7 +14,11 @@ void SqlRelation::populateModel()
 
     if (!model)
     {
-        QString query = Sql::concat(Sql::select(Sql::comma(m_indexColumn, m_displayColumn)), Sql::from(m_tableName));
+        QString query = Sql::concat(
+                        Sql::concat(
+                            Sql::select(Sql::comma(m_indexColumn, m_displayColumn)),
+                            Sql::from(m_tableName)),
+                            Sql::orderBy(m_displayColumn));
 
         qDebug() << query;
 

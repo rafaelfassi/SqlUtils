@@ -40,51 +40,19 @@ void MainWindow::on_btnRefresh_clicked()
 {
     if(!m_model)
     {
-//        m_model = new SqlRelationalTableModel(this);
-//        m_model->setTable("MENSAGEM_SISTEMA_IDIOMA");
-//        m_model->sort(m_model->record().indexOf("MSID_ID"), Qt::AscendingOrder);
-//        m_model->setJoinMode(QSqlRelationalTableModel::LeftJoin);
-
-//        m_model->setRelation(m_model->record().indexOf("MSID_MSGS_ID"),
-//                             QSqlRelation("MENSAGEM_SISTEMA", "MSGS_ID", "MSGS_CODIGO"));
-
-//        m_model->setRelation(m_model->record().indexOf("MSID_IDIO_ID"),
-//                             QSqlRelation("IDIOMA", "IDIO_ID", "IDIO_NOME"));
-
-//        QSqlTableModel *msgModel =  m_model->relationModel(m_model->record().indexOf("MSID_MSGS_ID"));
-//        msgModel->sort(msgModel->record().indexOf("MSGS_CODIGO"), Qt::AscendingOrder);
-
-//        while(msgModel->canFetchMore())
-//        {
-//            msgModel->fetchMore();
-//        }
-
-
-
-
         m_model = new BaseSqlTableModel(this);
         m_model->setTable("MENSAGEM_SISTEMA_IDIOMA");
         m_model->sort(m_model->record().indexOf("MSID_ID"), Qt::AscendingOrder);
 
         m_model->setRelation("MSID_MSGS_ID", "MENSAGEM_SISTEMA", "MSGS_ID", "MSGS_CODIGO");
+        m_model->setRelation("MSID_IDIO_ID", "IDIOMA", "IDIO_ID", "IDIO_NOME");
 
         ui->tableView->setModel(m_model);
         ui->tableView->setItemDelegate(new SqlRelationalDelegate(ui->tableView));
     }
 
-
-
     m_model->select();
-
-
-    //m_timerFetch->start(100);
-
-
-//    ui->tableView->setEnabled(false);
-//    ModelLoader *loader = new ModelLoader(m_model);
-//    connect(loader, SIGNAL(finished()), this, SLOT(fetchMore()));
-//    loader->start();
-
+    m_timerFetch->start(100);
 }
 
 void MainWindow::fetchMore()

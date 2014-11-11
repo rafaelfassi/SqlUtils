@@ -1,11 +1,52 @@
 #include "basesqltablemodel.h"
 #include <QSqlDriver>
-#include <QSqlRecord>
+#include <QSqlField>
 
 
 BaseSqlTableModel::BaseSqlTableModel(QObject *parent, QSqlDatabase db)
     : QSqlTableModel(parent, db)
 {
+}
+
+QVariant BaseSqlTableModel::data(const QModelIndex &index, int role) const
+{
+    if (role == Qt::DisplayRole && index.column() >= 0 && index.column() < m_relations.count() &&
+            m_relations.value(index.column()).isValid())
+    {
+        if(m_dictionaryCache.contains(index.row()) && m_dictionaryCache[index.row()].contains(index.column()))
+            return m_dictionaryCache[index.row()][index.column()];
+    }
+    return QSqlTableModel::data(index, role);
+}
+
+bool BaseSqlTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
+{
+    if (role == Qt::DisplayRole && index.column() > 0 && index.column() < m_relations.count()
+            && m_relations.value(index.column()).isValid())
+    {
+         m_dictionaryCache[index.row()][index.column()] = value;
+    }
+    return QSqlTableModel::setData(index, value, role);
+}
+
+bool BaseSqlTableModel::select()
+{
+    m_dictionaryCache.clear();
+    return QSqlTableModel::select();
+}
+
+bool BaseSqlTableModel::selectRow(int row)
+{
+    m_dictionaryCache.remove(row);
+    return QSqlTableModel::selectRow(row);
+}
+
+void BaseSqlTableModel::setTable(const QString &table)
+{
+    // memorize the table before applying the relations
+    m_baseRec = database().record(table);
+
+    QSqlTableModel::setTable(table);
 }
 
 void BaseSqlTableModel::setRelation(const QString &relationColumn,
@@ -64,7 +105,7 @@ QString BaseSqlTableModel::selectStatement() const
     // Count how many times each field name occurs in the record
     QHash<QString, int> fieldNames;
     QStringList fieldList;
-    for (int i = 0; i < record().count(); ++i)
+    for (int i = 0; i < m_baseRec.count(); ++i)
     {
         SqlRelation relation = m_relations.value(i);
         QString name;
@@ -84,7 +125,7 @@ QString BaseSqlTableModel::selectStatement() const
             }
         }
         else {
-            name = record().fieldName(i);
+            name = m_baseRec.fieldName(i);
         }
         fieldNames[name] = fieldNames.value(name, 0) + 1;
         fieldList.append(name);
@@ -93,10 +134,10 @@ QString BaseSqlTableModel::selectStatement() const
     QString fList;
     QString conditions;
     QString from = Sql::from(tableName());
-    for (int i = 0; i < record().count(); ++i)
+    for (int i = 0; i < m_baseRec.count(); ++i)
     {
         SqlRelation relation = m_relations.value(i);
-        const QString tableField = Sql::fullyQualifiedFieldName(tableName(), database().driver()->escapeIdentifier(record().fieldName(i), QSqlDriver::FieldName));
+        const QString tableField = Sql::fullyQualifiedFieldName(tableName(), database().driver()->escapeIdentifier(m_baseRec.fieldName(i), QSqlDriver::FieldName));
         if (relation.isValid())
         {
             const QString relTableAlias = Sql::relTablePrefix(i);
@@ -141,4 +182,23 @@ QString BaseSqlTableModel::selectStatement() const
     QString strQueryResult = Sql::concat(Sql::concat(stmt, where), orderByClause());
     qDebug() << strQueryResult;
     return strQueryResult;
+}
+
+bool BaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
+{
+    QSqlRecord rec = values;
+
+    for (int i = 0; i < rec.count(); ++i)
+    {
+        if (m_relations.value(i).isValid())
+        {
+            QVariant v = rec.value(i);
+            bool gen = rec.isGenerated(i);
+            rec.replace(i, m_baseRec.field(i));
+            rec.setValue(i, v);
+            rec.setGenerated(i, gen);
+        }
+    }
+
+    return QSqlTableModel::updateRowInTable(row, rec);
 }

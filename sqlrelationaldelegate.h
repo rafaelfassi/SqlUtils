@@ -30,6 +30,9 @@ QWidget *createEditor(QWidget *aParent,
     if (!childModel)
         return QItemDelegate::createEditor(aParent, option, index);
 
+    while(childModel->canFetchMore())
+        childModel->fetchMore();
+
     QComboBox *combo = new QComboBox(aParent);
     combo->setModel(childModel);
     combo->setModelColumn(childModel->record().indexOf(sqlModel->relation(index.column()).displayColumn()));
