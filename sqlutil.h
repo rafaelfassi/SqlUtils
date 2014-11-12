@@ -1,7 +1,9 @@
 #ifndef SQLUTIL_H
 #define SQLUTIL_H
 
-#include <QString>
+#include <QVariant>
+#include <QList>
+#include <QSqlDatabase>
 
 class Sql
 {
@@ -49,6 +51,29 @@ public:
         ret.append(tableName).append(QLatin1Char('.')).append(fieldName);
         return ret;
     }
+
+
+
+    struct Filters{
+        Filters() {}
+        Filters(QString _fieldText, QVariant _value, char _op)
+            :fieldText(_fieldText), value(_value), op(_op) {}
+
+        QString fieldText;
+        QVariant value;
+        char op;
+    };
+
+    static void addGlobalFilter(const QString &fieldText, const QVariant &value, char op = '%')
+    {
+        m_filters.append(Filters(fieldText, value, op));
+    }
+
+
+    static QString getGlobalFilter(const QString &table, QSqlDatabase db);
+    static QString getLikeTables(const QString &table1, const QString &table2, QSqlDatabase db);
+
+    static QList<Filters> m_filters;
 };
 
 #endif // SQLUTIL_H

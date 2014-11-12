@@ -42,7 +42,7 @@ bool FBaseSqlTableModel::select(FetchMode fetchMode)
     {
         switch (fetchMode)
         {
-        case AllFetch:
+        case ImmediateFetch:
             while(canFetchMore())
                 fetchMore();
             break;
@@ -223,7 +223,8 @@ QString FBaseSqlTableModel::selectStatement() const
             // Join related table
             const QString tblexpr = Sql::concat(relation.tableName(), relTableAlias);
             const QString relTableField = Sql::fullyQualifiedFieldName(relTableAlias, relation.indexColumn());
-            const QString cond = Sql::eq(tableField, relTableField);
+            const QString gLikeTables = Sql::getLikeTables(tableName(), relation.tableName(), database());
+            const QString cond = Sql::et(Sql::eq(tableField, relTableField), gLikeTables);
 
             from = Sql::concat(from, Sql::leftJoin(tblexpr));
             from = Sql::concat(from, Sql::on(cond));
@@ -237,6 +238,7 @@ QString FBaseSqlTableModel::selectStatement() const
     if (fList.isEmpty())
         return QString();
 
+    conditions = Sql::getGlobalFilter(tableName(), database());
     const QString stmt = Sql::concat(Sql::select(fList), from);
     const QString where = Sql::where(Sql::et(Sql::paren(conditions), Sql::paren(filter())));
 

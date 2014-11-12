@@ -2,16 +2,19 @@
 #define MODELLOADER_H
 
 #include <QThread>
-#include <QSqlTableModel>
+#include <QSqlQueryModel>
 
 class ModelLoader : public QThread
 {
     Q_OBJECT
 public:
-    ModelLoader(QSqlTableModel *model);
+    ModelLoader(QSqlQueryModel *model);
     void run();
 private:
-    QSqlTableModel *m_model;
+    QSqlQueryModel *m_model;
+
+signals:
+    void modelLoaded(QSqlQueryModel *model);
 };
 
 #endif // MODELLOADER_H

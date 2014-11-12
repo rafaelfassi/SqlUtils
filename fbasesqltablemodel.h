@@ -15,7 +15,7 @@ class FBaseSqlTableModel : public QSqlTableModel
 public:
 
     enum FetchMode {
-        AllFetch,
+        ImmediateFetch,
         LazyFetch,
         ManualFetch
     };
@@ -24,7 +24,7 @@ public:
 
     QVariant data(const QModelIndex &item, int role = Qt::DisplayRole) const;
     bool setData(const QModelIndex &item, const QVariant &value, int role = Qt::EditRole);
-    virtual bool select(FetchMode fetchMode = AllFetch);
+    virtual bool select(FetchMode fetchMode = ImmediateFetch);
     virtual bool selectRow(int row);
     virtual void setTable(const QString &tableName);
     void setRelation(const QString &relationColumn,
