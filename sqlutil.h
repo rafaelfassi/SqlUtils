@@ -1,7 +1,7 @@
 #ifndef SQLUTIL_H
 #define SQLUTIL_H
 
-#include <QSqlTableModel>
+#include <QString>
 
 class Sql
 {
@@ -49,41 +49,6 @@ public:
         ret.append(tableName).append(QLatin1Char('.')).append(fieldName);
         return ret;
     }
-};
-
-class SqlRelation
-{
-    public:
-        SqlRelation(): model(0), m_parent(0) {}
-
-        void populateModel();
-        //void clearDictionary();
-
-        void clear();
-        bool isValid();
-
-        QString relationColumn() const { return m_relationColumn; }
-        QString tableName() const { return m_tableName; }
-        QString indexColumn() const { return m_indexColumn; }
-        QString displayColumn() const { return m_displayColumn; }
-        QString sortColumn() const { return m_sortColumn; }
-
-        void setParent(QSqlTableModel *parent) { m_parent = parent; }
-        void setRelationColumn(const QString &relationColumn) { m_relationColumn = relationColumn; }
-        void setTableName(const QString &tableName) { m_tableName = tableName; }
-        void setIndexColumn(const QString &indexColumn) { m_indexColumn = indexColumn; }
-        void setDisplayColumn(const QString &displayColumn) { m_displayColumn = displayColumn; }
-        void setSortColumn(const QString &sortColumn) { m_sortColumn = sortColumn; }
-
-        QSqlQueryModel *model;
-
-    private:
-        QSqlTableModel *m_parent;
-        QString m_relationColumn;
-        QString m_tableName;
-        QString m_indexColumn;
-        QString m_displayColumn;
-        QString m_sortColumn;
 };
 
 #endif // SQLUTIL_H

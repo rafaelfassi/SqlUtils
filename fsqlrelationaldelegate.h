@@ -1,23 +1,24 @@
-#ifndef SQLRELATIONALDELEGATE_H
-#define SQLRELATIONALDELEGATE_H
+#ifndef FSQLRELATIONALDELEGATE_H
+#define FSQLRELATIONALDELEGATE_H
 
-#include "basesqltablemodel.h"
+#include "fbasesqltablemodel.h"
 
 #include <QtWidgets/qitemdelegate.h>
 #include <QtWidgets/qlistview.h>
 #include <QtWidgets/qcombobox.h>
 #include <QSqlRecord>
+#include <QDebug>
 
 
-class SqlRelationalDelegate: public QItemDelegate
+class FSqlRelationalDelegate: public QItemDelegate
 {
 public:
 
-explicit SqlRelationalDelegate(QObject *aParent = 0)
+explicit FSqlRelationalDelegate(QObject *aParent = 0)
     : QItemDelegate(aParent)
 {}
 
-~SqlRelationalDelegate()
+~FSqlRelationalDelegate()
 {}
 
 QWidget *createEditor(QWidget *aParent,
@@ -25,7 +26,7 @@ QWidget *createEditor(QWidget *aParent,
                       const QModelIndex &index) const
 {
     qDebug("createEditor");
-    const BaseSqlTableModel *sqlModel = qobject_cast<const BaseSqlTableModel *>(index.model());
+    const FBaseSqlTableModel *sqlModel = qobject_cast<const FBaseSqlTableModel *>(index.model());
     QSqlQueryModel *childModel = sqlModel ? sqlModel->relationModel(index.column()) : 0;
     if (!childModel)
         return QItemDelegate::createEditor(aParent, option, index);
@@ -36,7 +37,7 @@ QWidget *createEditor(QWidget *aParent,
     QComboBox *combo = new QComboBox(aParent);
     combo->setModel(childModel);
     combo->setModelColumn(childModel->record().indexOf(sqlModel->relation(index.column()).displayColumn()));
-    combo->installEventFilter(const_cast<SqlRelationalDelegate *>(this));
+    combo->installEventFilter(const_cast<FSqlRelationalDelegate *>(this));
 
     return combo;
 }
@@ -47,7 +48,7 @@ void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex 
     if (!index.isValid())
         return;
 
-    BaseSqlTableModel *sqlModel = qobject_cast<BaseSqlTableModel *>(model);
+    FBaseSqlTableModel *sqlModel = qobject_cast<FBaseSqlTableModel *>(model);
     QSqlQueryModel *childModel = sqlModel ? sqlModel->relationModel(index.column()) : 0;
     QComboBox *combo = qobject_cast<QComboBox *>(editor);
     if (!sqlModel || !childModel || !combo) {
@@ -68,4 +69,4 @@ void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex 
 
 };
 
-#endif // SQLRELATIONALDELEGATE_H
+#endif // FSQLRELATIONALDELEGATE_H

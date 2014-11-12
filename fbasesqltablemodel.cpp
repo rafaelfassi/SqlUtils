@@ -1,59 +1,92 @@
-#include "basesqltablemodel.h"
+#include "fbasesqltablemodel.h"
+#include "sqlutil.h"
+
 #include <QSqlDriver>
 #include <QSqlField>
+#include <QSqlQuery>
+#include <QTimer>
 
-
-BaseSqlTableModel::BaseSqlTableModel(QObject *parent, QSqlDatabase db)
-    : QSqlTableModel(parent, db)
+FBaseSqlTableModel::FBaseSqlTableModel(QObject *parent, QSqlDatabase db)
+    : QSqlTableModel(parent, db), m_timerFetch(0)
 {
 }
 
-QVariant BaseSqlTableModel::data(const QModelIndex &index, int role) const
+QVariant FBaseSqlTableModel::data(const QModelIndex &index, int role) const
 {
     if (role == Qt::DisplayRole && index.column() >= 0 && index.column() < m_relations.count() &&
             m_relations.value(index.column()).isValid())
     {
-        if(m_dictionaryCache.contains(index.row()) && m_dictionaryCache[index.row()].contains(index.column()))
-            return m_dictionaryCache[index.row()][index.column()];
+        if(m_displayCache.contains(index.row()) && m_displayCache[index.row()].contains(index.column()))
+            return m_displayCache[index.row()][index.column()];
     }
     return QSqlTableModel::data(index, role);
 }
 
-bool BaseSqlTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
+bool FBaseSqlTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
     if (role == Qt::DisplayRole && index.column() > 0 && index.column() < m_relations.count()
             && m_relations.value(index.column()).isValid())
     {
-         m_dictionaryCache[index.row()][index.column()] = value;
+         m_displayCache[index.row()][index.column()] = value;
     }
     return QSqlTableModel::setData(index, value, role);
 }
 
-bool BaseSqlTableModel::select()
+bool FBaseSqlTableModel::select(FetchMode fetchMode)
 {
-    m_dictionaryCache.clear();
-    return QSqlTableModel::select();
+    m_displayCache.clear();
+
+    bool ok = QSqlTableModel::select();
+
+    if(ok)
+    {
+        switch (fetchMode)
+        {
+        case AllFetch:
+            while(canFetchMore())
+                fetchMore();
+            break;
+        case LazyFetch:
+            if(!m_timerFetch)
+            {
+                m_timerFetch = new QTimer(this);
+                connect(m_timerFetch, SIGNAL(timeout()), this, SLOT(doFetchMore()));
+            }
+            m_timerFetch->start(50);
+        }
+    }
+
+    return ok;
 }
 
-bool BaseSqlTableModel::selectRow(int row)
+void FBaseSqlTableModel::doFetchMore()
 {
-    m_dictionaryCache.remove(row);
+    m_timerFetch->stop();
+
+    if(canFetchMore())
+    {
+        fetchMore();
+        m_timerFetch->start();
+    }
+}
+
+bool FBaseSqlTableModel::selectRow(int row)
+{
+    m_displayCache.remove(row);
     return QSqlTableModel::selectRow(row);
 }
 
-void BaseSqlTableModel::setTable(const QString &table)
+void FBaseSqlTableModel::setTable(const QString &table)
 {
     // memorize the table before applying the relations
     m_baseRec = database().record(table);
-
     QSqlTableModel::setTable(table);
 }
 
-void BaseSqlTableModel::setRelation(const QString &relationColumn,
+void FBaseSqlTableModel::setRelation(const QString &relationColumn,
                                                  const QString &tableName,
                                                  const QString &indexColumn,
-                                                 const QString &displayColumn,
-                                                 const QString &sortColumn)
+                                                 const QString &displayColumn)
 {
     int column = record().indexOf(relationColumn);
 
@@ -61,13 +94,12 @@ void BaseSqlTableModel::setRelation(const QString &relationColumn,
         return;
 
 
-    SqlRelation sqlRelation;
+    FSqlRelation sqlRelation;
     sqlRelation.setParent(this);
     sqlRelation.setRelationColumn(relationColumn);
     sqlRelation.setTableName(tableName);
     sqlRelation.setIndexColumn(indexColumn);
     sqlRelation.setDisplayColumn(displayColumn);
-    sqlRelation.setSortColumn(sortColumn);
 
     if (m_relations.size() <= column)
         m_relations.resize(column + 1);
@@ -75,27 +107,56 @@ void BaseSqlTableModel::setRelation(const QString &relationColumn,
     m_relations[column] = sqlRelation;
 }
 
-QSqlQueryModel *BaseSqlTableModel::relationModel(int column) const
+QSqlQueryModel *FBaseSqlTableModel::relationModel(int column) const
 {
-    if ( column < 0 || column >= m_relations.count())
+    if (column < 0 || column >= m_relations.count())
         return 0;
 
-    SqlRelation &relation = m_relations[column];
+    FSqlRelation &relation = m_relations[column];
     if (!relation.isValid())
         return 0;
 
-    if (!relation.model)
+    if (!relation.model())
         relation.populateModel();
-    return relation.model;
+    return relation.model();
 }
 
-SqlRelation BaseSqlTableModel::relation(int column) const
+FSqlRelation FBaseSqlTableModel::relation(int column) const
 {
+    if (column < 0 || column >= m_relations.count())
+        return FSqlRelation();
     return m_relations.value(column);
 }
 
+int FBaseSqlTableModel::getRelationalId(const QModelIndex &item) const
+{
+    int column = item.column();
+    if (column < 0 || column >= m_relations.count())
+        return 0;
 
-QString BaseSqlTableModel::selectStatement() const
+    if(m_relations.value(item.column()).isValid())
+    {
+        FSqlRelation &relation = m_relations.value(column);
+
+        QString strFilter = database().driver()->sqlStatement(QSqlDriver::WhereStatement,
+                                                                          tableName(),
+                                                                          primaryValues(item.row()),
+                                                                          false);
+
+        QString strQuery = Sql::concat(
+                           Sql::concat(
+                                Sql::select(relation.relationColumn()),
+                                Sql::from(tableName())),
+                                strFilter);
+
+        QSqlQuery query(strQuery);
+        if(query.next())
+            return query.value(0).toInt();
+    }
+    return 0;
+}
+
+QString FBaseSqlTableModel::selectStatement() const
 {
     if (tableName().isEmpty())
         return QString();
@@ -107,7 +168,7 @@ QString BaseSqlTableModel::selectStatement() const
     QStringList fieldList;
     for (int i = 0; i < m_baseRec.count(); ++i)
     {
-        SqlRelation relation = m_relations.value(i);
+        FSqlRelation relation = m_relations.value(i);
         QString name;
         if (relation.isValid())
         {
@@ -136,7 +197,7 @@ QString BaseSqlTableModel::selectStatement() const
     QString from = Sql::from(tableName());
     for (int i = 0; i < m_baseRec.count(); ++i)
     {
-        SqlRelation relation = m_relations.value(i);
+        FSqlRelation relation = m_relations.value(i);
         const QString tableField = Sql::fullyQualifiedFieldName(tableName(), database().driver()->escapeIdentifier(m_baseRec.fieldName(i), QSqlDriver::FieldName));
         if (relation.isValid())
         {
@@ -184,7 +245,7 @@ QString BaseSqlTableModel::selectStatement() const
     return strQueryResult;
 }
 
-bool BaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
+bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
 {
     QSqlRecord rec = values;
 

@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "modelloader.h"
-#include "sqlrelationaldelegate.h"
+#include "fsqlrelationaldelegate.h"
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -13,9 +13,6 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow), m_model(0)
 {
     ui->setupUi(this);
-
-    m_timerFetch = new QTimer(this);
-    connect(m_timerFetch, SIGNAL(timeout()), this, SLOT(fetchMore()));
 }
 
 MainWindow::~MainWindow()
@@ -26,9 +23,9 @@ MainWindow::~MainWindow()
 void MainWindow::on_btnOpen_clicked()
 {
     QSqlDatabase db = QSqlDatabase::addDatabase("QOCI");
-    db.setHostName("localhost");
+    db.setHostName("10.154.126.13");
     db.setPort(1521);
-    db.setDatabaseName("ORA11");
+    db.setDatabaseName("DEV");
     db.setUserName("epccq");
     db.setPassword("epccq");
 
@@ -40,28 +37,20 @@ void MainWindow::on_btnRefresh_clicked()
 {
     if(!m_model)
     {
-        m_model = new BaseSqlTableModel(this);
-        m_model->setTable("MENSAGEM_SISTEMA_IDIOMA");
-        m_model->sort(m_model->record().indexOf("MSID_ID"), Qt::AscendingOrder);
+        m_model = new FBaseSqlTableModel(this);
+        m_model->setTable("folha_servico_medicao");
+        m_model->setRelation("FOSM_UNME_ID", "UNIDADE_MEDIDA", "UNME_ID", "UNME_NOME");
 
-        m_model->setRelation("MSID_MSGS_ID", "MENSAGEM_SISTEMA", "MSGS_ID", "MSGS_CODIGO");
-        m_model->setRelation("MSID_IDIO_ID", "IDIOMA", "IDIO_ID", "IDIO_NOME");
+//        m_model->setTable("MENSAGEM_SISTEMA_IDIOMA");
+//        m_model->sort(m_model->record().indexOf("MSID_ID"), Qt::AscendingOrder);
+
+//        m_model->setRelation("MSID_MSGS_ID", "MENSAGEM_SISTEMA", "MSGS_ID", "MSGS_CODIGO");
+//        m_model->setRelation("MSID_IDIO_ID", "IDIOMA", "IDIO_ID", "IDIO_NOME");
 
         ui->tableView->setModel(m_model);
-        ui->tableView->setItemDelegate(new SqlRelationalDelegate(ui->tableView));
+        ui->tableView->setItemDelegate(new FSqlRelationalDelegate(ui->tableView));
     }
 
-    m_model->select();
-    m_timerFetch->start(100);
+    m_model->select(FBaseSqlTableModel::AllFetch);
 }
 
-void MainWindow::fetchMore()
-{
-    m_timerFetch->stop();
-
-    if(m_model->canFetchMore())
-    {
-        m_model->fetchMore();
-        m_timerFetch->start();
-    }
-}
