@@ -24,13 +24,13 @@ MainWindow::~MainWindow()
 void MainWindow::on_btnOpen_clicked()
 {
     QSqlDatabase db = QSqlDatabase::addDatabase("QOCI");
-    db.setHostName("localhost");
+    db.setHostName("10.154.126.13");
     db.setPort(1521);
-    db.setDatabaseName("ORA11");
+    db.setDatabaseName("DEV");
     db.setUserName("epccq");
     db.setPassword("epccq");
 
-    Sql::addGlobalFilter("_CNTR_CODIGO", "VEN");
+    Sql::addGlobalFilter("_CNTR_CODIGO", "EXXI-EXT2");
 
     if(db.open()) qDebug("Banco de dados aberto");
     else qDebug("Falha oa abrir o banco de dados");
@@ -57,7 +57,7 @@ void MainWindow::on_btnRefresh_clicked()
         ui->tableView->setItemDelegate(new FSqlRelationalDelegate(ui->tableView));
     }
 
-    m_model->select(FBaseSqlTableModel::ManualFetch);
+    m_model->select(FBaseSqlTableModel::ParallelFetch);
 
 
 

@@ -5,6 +5,26 @@
 #include <QSqlField>
 #include <QSqlQuery>
 #include <QTimer>
+#include <QThread>
+
+class ModelLoader : public QThread
+{
+public:
+    ModelLoader(FBaseSqlTableModel *model) :
+        QThread(0), m_model(model) {}
+    void run()
+    {
+        while(m_model->canFetchMore())
+        {
+            m_model->fetchMore();
+            sleep(1);
+        }
+        this->deleteLater();
+    }
+
+private:
+    FBaseSqlTableModel *m_model;
+};
 
 FBaseSqlTableModel::FBaseSqlTableModel(QObject *parent, QSqlDatabase db)
     : QSqlTableModel(parent, db), m_timerFetch(0)
@@ -19,16 +39,20 @@ QVariant FBaseSqlTableModel::data(const QModelIndex &index, int role) const
         if(m_displayCache.contains(index.row()) && m_displayCache[index.row()].contains(index.column()))
             return m_displayCache[index.row()][index.column()];
     }
+
     return QSqlTableModel::data(index, role);
 }
 
 bool FBaseSqlTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
+    QMutexLocker locker(&m_mutex);
+
     if (role == Qt::DisplayRole && index.column() > 0 && index.column() < m_relations.count()
             && m_relations.value(index.column()).isValid())
     {
          m_displayCache[index.row()][index.column()] = value;
     }
+
     return QSqlTableModel::setData(index, value, role);
 }
 
@@ -43,16 +67,26 @@ bool FBaseSqlTableModel::select(FetchMode fetchMode)
         switch (fetchMode)
         {
         case ImmediateFetch:
-            while(canFetchMore())
-                fetchMore();
+            {
+                while(canFetchMore())
+                    fetchMore();
+            }
             break;
         case LazyFetch:
-            if(!m_timerFetch)
             {
-                m_timerFetch = new QTimer(this);
-                connect(m_timerFetch, SIGNAL(timeout()), this, SLOT(doFetchMore()));
+                if(!m_timerFetch)
+                {
+                    m_timerFetch = new QTimer(this);
+                    connect(m_timerFetch, SIGNAL(timeout()), this, SLOT(doFetchMore()));
+                }
+                m_timerFetch->start(50);
             }
-            m_timerFetch->start(50);
+            break;
+        case ParallelFetch:
+            {
+                ModelLoader *modelLoader = new ModelLoader(this);
+                modelLoader->start();
+            }
         }
     }
 
@@ -81,6 +115,17 @@ void FBaseSqlTableModel::setTable(const QString &table)
     // memorize the table before applying the relations
     m_baseRec = database().record(table);
     QSqlTableModel::setTable(table);
+}
+
+bool FBaseSqlTableModel::canFetchMore(const QModelIndex &parent) const
+{
+    return QSqlTableModel::canFetchMore(parent);
+}
+
+void FBaseSqlTableModel::fetchMore(const QModelIndex &parent)
+{
+    QMutexLocker locker(&m_mutex);
+    QSqlTableModel::fetchMore(parent);
 }
 
 void FBaseSqlTableModel::setRelation(const QString &relationColumn,
@@ -178,14 +223,17 @@ QString FBaseSqlTableModel::selectStatement() const
                 name = database().driver()->stripDelimiters(name, QSqlDriver::FieldName);
 
             const QSqlRecord rec = database().record(relation.tableName());
-            for (int i = 0; i < rec.count(); ++i) {
-                if (name.compare(rec.fieldName(i), Qt::CaseInsensitive) == 0) {
+            for (int i = 0; i < rec.count(); ++i)
+            {
+                if (name.compare(rec.fieldName(i), Qt::CaseInsensitive) == 0)
+                {
                     name = rec.fieldName(i);
                     break;
                 }
             }
         }
-        else {
+        else
+        {
             name = m_baseRec.fieldName(i);
         }
         fieldNames[name] = fieldNames.value(name, 0) + 1;
@@ -195,10 +243,11 @@ QString FBaseSqlTableModel::selectStatement() const
     QString fList;
     QString conditions;
     QString from = Sql::from(tableName());
+
     for (int i = 0; i < m_baseRec.count(); ++i)
     {
         FSqlRelation relation = m_relations.value(i);
-        const QString tableField = Sql::fullyQualifiedFieldName(tableName(), database().driver()->escapeIdentifier(m_baseRec.fieldName(i), QSqlDriver::FieldName));
+        const QString tableField = database().driver()->escapeIdentifier(m_baseRec.fieldName(i), QSqlDriver::FieldName);
         if (relation.isValid())
         {
             const QString relTableAlias = Sql::relTablePrefix(i);
@@ -221,17 +270,16 @@ QString FBaseSqlTableModel::selectStatement() const
             fList = Sql::comma(fList, displayTableField);
 
             // Join related table
-            const QString tblexpr = Sql::concat(relation.tableName(), relTableAlias);
-            const QString relTableField = Sql::fullyQualifiedFieldName(relTableAlias, relation.indexColumn());
-            const QString gLikeTables = Sql::getLikeTables(tableName(), relation.tableName(), database());
-            const QString cond = Sql::et(Sql::eq(tableField, relTableField), gLikeTables);
+            QString join = Sql::getJoinTables(tableName(), relation.tableName(),
+                                              tableName(), relTableAlias,
+                                              tableField, relation.indexColumn(),
+                                              Sql::LeftJoin, database());
 
-            from = Sql::concat(from, Sql::leftJoin(tblexpr));
-            from = Sql::concat(from, Sql::on(cond));
+            from = Sql::concat(from, join);
         }
         else
         {
-            fList = Sql::comma(fList, tableField);
+            fList = Sql::comma(fList, Sql::fullyQualifiedFieldName(tableName(), tableField));
         }
     }
 
@@ -243,7 +291,11 @@ QString FBaseSqlTableModel::selectStatement() const
     const QString where = Sql::where(Sql::et(Sql::paren(conditions), Sql::paren(filter())));
 
     QString strQueryResult = Sql::concat(Sql::concat(stmt, where), orderByClause());
+
     qDebug() << strQueryResult;
+
+
+
     return strQueryResult;
 }
 

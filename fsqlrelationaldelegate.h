@@ -36,6 +36,7 @@ QWidget *createEditor(QWidget *aParent,
 
     QComboBox *combo = new QComboBox(aParent);
     combo->setModel(childModel);
+    //combo->setEditable(true);
     combo->setModelColumn(childModel->record().indexOf(sqlModel->relation(index.column()).displayColumn()));
     combo->installEventFilter(const_cast<FSqlRelationalDelegate *>(this));
 

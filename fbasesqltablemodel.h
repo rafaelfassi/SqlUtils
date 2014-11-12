@@ -17,6 +17,7 @@ public:
     enum FetchMode {
         ImmediateFetch,
         LazyFetch,
+        ParallelFetch,
         ManualFetch
     };
 
@@ -27,6 +28,8 @@ public:
     virtual bool select(FetchMode fetchMode = ImmediateFetch);
     virtual bool selectRow(int row);
     virtual void setTable(const QString &tableName);
+    virtual bool canFetchMore(const QModelIndex &parent = QModelIndex()) const;
+    virtual void fetchMore(const QModelIndex &parent = QModelIndex());
     void setRelation(const QString &relationColumn,
                      const QString &tableName,
                      const QString &indexColumn,
@@ -48,6 +51,7 @@ private:
     mutable QHash<int, QHash<int, QVariant>> m_displayCache;
     QSqlRecord m_baseRec;
     QTimer *m_timerFetch;
+    mutable QMutex m_mutex;
 };
 
 

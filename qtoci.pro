@@ -14,13 +14,11 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    modelloader.cpp \
     fsqlrelation.cpp \
     fbasesqltablemodel.cpp \
     sqlutil.cpp
 
 HEADERS  += mainwindow.h \
-    modelloader.h \
     sqlutil.h \
     fsqlrelation.h \
     fbasesqltablemodel.h \
