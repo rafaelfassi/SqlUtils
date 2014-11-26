@@ -87,7 +87,7 @@ public:
     }
 
 
-    static QString getGlobalFilter(const QString &table, QSqlDatabase db);
+    static QString getGlobalFilter(const QString &table, const QString &qualif, QSqlDatabase db);
 
     static QString getLikeTables(const QString &table1, const QString &table2,
                                  const QString &qualif1, const QString &qualif2, QSqlDatabase db);

@@ -16,7 +16,7 @@ void FSqlRelation::populateModel()
                         Sql::concat(
                             Sql::select(Sql::comma(m_indexColumn, m_displayColumn)),
                             Sql::from(m_tableName)),
-                            Sql::where(Sql::getGlobalFilter(m_tableName, m_parent->database()))),
+                            Sql::where(Sql::getGlobalFilter(m_tableName, m_tableName, m_parent->database()))),
                             Sql::orderBy(m_displayColumn));
 
         qDebug() << query;

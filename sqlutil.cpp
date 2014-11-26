@@ -3,7 +3,7 @@
 
 QList<Sql::Filters> Sql::m_filters;
 
-QString Sql::getGlobalFilter(const QString &table, QSqlDatabase db)
+QString Sql::getGlobalFilter(const QString &table, const QString &qualif, QSqlDatabase db)
 {
     QSqlRecord rec = db.record(table);
     QString filter;
@@ -26,7 +26,7 @@ QString Sql::getGlobalFilter(const QString &table, QSqlDatabase db)
                     strValue = QString("'%1'").arg(strValue);
                 }
 
-                filter = et(filter, eq(fieldName, strValue));
+                filter = et(filter, eq(fullyQualifiedFieldName(qualif, fieldName), strValue));
                 break;
             }
         }

@@ -24,13 +24,13 @@ MainWindow::~MainWindow()
 void MainWindow::on_btnOpen_clicked()
 {
     QSqlDatabase db = QSqlDatabase::addDatabase("QOCI");
-    db.setHostName("10.154.126.13");
+    db.setHostName("localhost");
     db.setPort(1521);
-    db.setDatabaseName("DEV");
+    db.setDatabaseName("ORA11");
     db.setUserName("epccq");
     db.setPassword("epccq");
 
-    Sql::addGlobalFilter("_CNTR_CODIGO", "EXXI-EXT2");
+    Sql::addGlobalFilter("_CNTR_CODIGO", "Qualidade");
 
     if(db.open()) qDebug("Banco de dados aberto");
     else qDebug("Falha oa abrir o banco de dados");
@@ -38,26 +38,35 @@ void MainWindow::on_btnOpen_clicked()
 
 void MainWindow::on_btnRefresh_clicked()
 {
-
-
     if(!m_model)
     {
         m_model = new FBaseSqlTableModel(this);
 
-        m_model->setTable("folha_servico_medicao");
-        m_model->setRelation("FOSM_UNME_ID", "UNIDADE_MEDIDA", "UNME_ID", "UNME_NOME");
+        m_model->setTable("DOCUMENTO");
+        m_model->addJoin("DCMN_ID", "LISTA_LINHA", "LSLN_DCMN_ID", Sql::InnerJoin);
+
+        m_model->addField("DCMN_NUMERO");
+        m_model->addField("DCMN_TITULO");
+        m_model->addField("LSLN_DE_ORIGEM");
+        m_model->addField("LSLN_PARA_DESTINO");
+        m_model->addField("LSLN_DCMN_ID");
+
+
+
+        //m_model->setRelation("FOSM_UNME_ID", "UNIDADE_MEDIDA", "UNME_ID", "UNME_NOME");
+        //m_model->setRelation("FOSM_FCES_ID", "folha_criterio_estrutura", "FCES_ID", "FCES_SIGLA");
 
 //        m_model->setTable("MENSAGEM_SISTEMA_IDIOMA");
 //        m_model->sort(m_model->record().indexOf("MSID_ID"), Qt::AscendingOrder);
 
-        m_model->setRelation("MSID_MSGS_ID", "MENSAGEM_SISTEMA", "MSGS_ID", "MSGS_CODIGO");
-        m_model->setRelation("MSID_IDIO_ID", "IDIOMA", "IDIO_ID", "IDIO_NOME");
+        //m_model->setRelation("MSID_MSGS_ID", "MENSAGEM_SISTEMA", "MSGS_ID", "MSGS_CODIGO");
+        //m_model->setRelation("MSID_IDIO_ID", "IDIOMA", "IDIO_ID", "IDIO_NOME");
 
         ui->tableView->setModel(m_model);
         ui->tableView->setItemDelegate(new FSqlRelationalDelegate(ui->tableView));
     }
 
-    m_model->select(FBaseSqlTableModel::ParallelFetch);
+    m_model->select(FBaseSqlTableModel::ManualFetch);
 
 
 
