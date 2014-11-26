@@ -22,6 +22,7 @@ struct SqlTableJoin {
     QString relationColumn;
     QString indexColumn;
     Sql::JoinMode joinMode;
+    int relationTableId;
 };
 
 
@@ -51,10 +52,16 @@ public:
                      const QString &indexColumn,
                      const QString &displayColumn);
 
+    int addJoin(int relationTableId,
+                const QString &relationColumn,
+                const QString &tableName,
+                const QString &indexColumn,
+                Sql::JoinMode joinMode = Sql::LeftJoin);
+
     int addJoin(const QString &relationColumn,
-                 const QString &tableName,
-                 const QString &indexColumn,
-                 Sql::JoinMode joinMode = Sql::LeftJoin);
+                const QString &tableName,
+                const QString &indexColumn,
+                Sql::JoinMode joinMode = Sql::LeftJoin);
 
     void addField(int tableId, const QString &fieldName);
     void addField(const QString &fieldName);
@@ -72,6 +79,7 @@ private slots:
 protected:
     virtual QString selectStatement() const;
     virtual bool updateRowInTable(int row, const QSqlRecord &values);
+    int getTableIdByField(const QString &fieldName);
 
 private:
     mutable QVector<FSqlRelation> m_relations;

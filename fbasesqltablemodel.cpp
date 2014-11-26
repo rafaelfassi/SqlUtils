@@ -180,15 +180,15 @@ void FBaseSqlTableModel::setRelation(const QString &relationColumn,
 //    m_relations[column] = sqlRelation;
 }
 
-int FBaseSqlTableModel::addJoin(const QString &relationColumn,
-             const QString &tableName,
-             const QString &indexColumn,
+int FBaseSqlTableModel::addJoin(int relationTableId, const QString &relationColumn,
+             const QString &tableName, const QString &indexColumn,
              Sql::JoinMode joinMode)
 {
     Q_ASSERT_X(m_tables.size(), "FBaseSqlTableModel::addJoin()",
                "Necessario setar uma tabela antes de adicionar um join");
 
     SqlTableJoin join;
+    join.relationTableId = relationTableId;
     join.relationColumn = relationColumn;
     join.tableName = tableName;
     join.tableAlias = Sql::relTablePrefix(m_tables.size());
@@ -200,6 +200,18 @@ int FBaseSqlTableModel::addJoin(const QString &relationColumn,
     return m_tables.size() - 1;
 }
 
+int FBaseSqlTableModel::addJoin(const QString &relationColumn,
+             const QString &tableName, const QString &indexColumn,
+             Sql::JoinMode joinMode)
+{
+    int tabId = getTableIdByField(relationColumn);
+
+    if(tabId >= 0)
+        return addJoin(tabId, relationColumn, tableName, indexColumn, joinMode);
+
+    return -1;
+}
+
 void FBaseSqlTableModel::addField(int tableId, const QString &fieldName)
 {
     if(tableId < m_tables.size())
@@ -208,6 +220,12 @@ void FBaseSqlTableModel::addField(int tableId, const QString &fieldName)
 
 void FBaseSqlTableModel::addField(const QString &fieldName)
 {
+    int tabId = getTableIdByField(fieldName);
+    if(tabId >= 0) addField(tabId, fieldName);
+}
+
+int FBaseSqlTableModel::getTableIdByField(const QString &fieldName)
+{
     for(int i = 0; i < m_tables.size(); ++i)
     {
         const QSqlRecord &rec = m_tables.at(i).baseRec;
@@ -215,11 +233,11 @@ void FBaseSqlTableModel::addField(const QString &fieldName)
         {
             if(rec.fieldName(r) == fieldName)
             {
-                addField(i, fieldName);
-                return;
+                return i;
             }
         }
     }
+    return -1;
 }
 
 QString FBaseSqlTableModel::filter() const
@@ -295,8 +313,9 @@ QString FBaseSqlTableModel::selectStatement() const
     for(int i = 1; i < m_tables.size(); ++i)
     {
         const SqlTableJoin &joinTable = m_tables.at(i);
-        QString join = Sql::getJoinTables(mainTable.tableName, joinTable.tableName,
-                                          mainTable.tableAlias, joinTable.tableAlias,
+        const SqlTableJoin &joinRelTable = m_tables.at(joinTable.relationTableId);
+        QString join = Sql::getJoinTables(joinRelTable.tableName, joinTable.tableName,
+                                          joinRelTable.tableAlias, joinTable.tableAlias,
                                           joinTable.relationColumn, joinTable.indexColumn,
                                           joinTable.joinMode, m_db);
         from = Sql::concat(from, join);

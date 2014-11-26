@@ -43,13 +43,15 @@ void MainWindow::on_btnRefresh_clicked()
         m_model = new FBaseSqlTableModel(this);
 
         m_model->setTable("DOCUMENTO");
-        m_model->addJoin("DCMN_ID", "LISTA_LINHA", "LSLN_DCMN_ID", Sql::InnerJoin);
+        m_model->addJoin("DCMN_ID", "LISTA_SPOOL", "LISP_DCMN_ID", Sql::InnerJoin);
+        m_model->addJoin("LISP_DMTR_ID", "DIAMETRO", "DMTR_ID");
 
         m_model->addField("DCMN_NUMERO");
         m_model->addField("DCMN_TITULO");
-        m_model->addField("LSLN_DE_ORIGEM");
-        m_model->addField("LSLN_PARA_DESTINO");
-        m_model->addField("LSLN_DCMN_ID");
+        m_model->addField("LISP_PESO");
+        m_model->addField("LISP_DT_RECEBIMENTO");
+        m_model->addField("LISP_LOTE");
+        m_model->addField("DMTR_CODIGO");
 
 
 
