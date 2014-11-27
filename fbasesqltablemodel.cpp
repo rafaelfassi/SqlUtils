@@ -2,10 +2,10 @@
 
 #include <QSqlDriver>
 #include <QSqlField>
-#include <QSqlQuery>
 #include <QTimer>
 #include <QThread>
 #include <QSqlError>
+#include <QSqlResult>
 
 class ModelLoader : public QThread
 {
@@ -27,12 +27,43 @@ private:
 };
 
 FBaseSqlTableModel::FBaseSqlTableModel(QObject *parent, QSqlDatabase db)
-    : QSqlQueryModel(parent),m_db(db), m_timerFetch(0)
+    : QSqlQueryModel(parent),m_db(db), m_timerFetch(0), m_busyInsertingRows(false),
+      m_strategy(OnFieldChange)
 {
+}
+
+void FBaseSqlTableModel::initRecordAndPrimaryIndex(int tableId)
+{
+    SqlTableJoin &table = m_tables[tableId];
+    table.baseRec = m_db.record(table.tableName);
+    table.primaryIndex = m_db.primaryIndex(table.tableName);
+}
+
+QSqlRecord FBaseSqlTableModel::primaryValues(int tableId, int row) const
+{
+    const SqlTableJoin &table = m_tables[tableId];
+
+    const QSqlRecord &pIndex = table.primaryIndex.isEmpty() ? table.baseRec : table.primaryIndex;
+
+    ModifiedRow mr = m_cache.value(row);
+    if (mr.op() != None)
+        return mr.primaryValues(pIndex);
+    else
+        return QSqlQueryModel::record(row).keyValues(pIndex);
 }
 
 QVariant FBaseSqlTableModel::data(const QModelIndex &index, int role) const
 {
+    if (!index.isValid() || (role != Qt::DisplayRole && role != Qt::EditRole))
+        return QVariant();
+
+    const ModifiedRow mrow = m_cache.value(index.row());
+    if (mrow.op() != None)
+        return mrow.rec().value(index.column());
+
+    return QSqlQueryModel::data(index, role);
+
+    /*
     if (role == Qt::DisplayRole && index.column() >= 0 && index.column() < m_relations.count() &&
             m_relations.value(index.column()).isValid())
     {
@@ -41,19 +72,111 @@ QVariant FBaseSqlTableModel::data(const QModelIndex &index, int role) const
     }
 
     return QSqlQueryModel::data(index, role);
+    */
 }
 
 bool FBaseSqlTableModel::setData(const QModelIndex &index, const QVariant &value, int role)
 {
-    QMutexLocker locker(&m_mutex);
+    if (m_busyInsertingRows)
+        return false;
 
-    if (role == Qt::DisplayRole && index.column() > 0 && index.column() < m_relations.count()
-            && m_relations.value(index.column()).isValid())
-    {
-         m_displayCache[index.row()][index.column()] = value;
+    if (role != Qt::EditRole)
+        return QSqlQueryModel::setData(index, value, role);
+
+    if (!index.isValid() || /*index.column() >= d->rec.count() ||*/ index.row() >= rowCount())
+        return false;
+
+    if (!(flags(index) & Qt::ItemIsEditable))
+        return false;
+
+    const QVariant oldValue = data(index, role);
+    if (value == oldValue
+        && value.isNull() == oldValue.isNull()
+        && m_cache.value(index.row()).op() != Insert)
+        return true;
+
+    ModifiedRow &row = m_cache[index.row()];
+
+    if (row.op() == None)
+        row = ModifiedRow(Update, QSqlQueryModel::record(index.row()));
+
+    row.setValue(index.column(), value);
+    emit dataChanged(index, index);
+
+    if (m_strategy == OnFieldChange && row.op() != Insert)
+        return submit();
+
+    return true;
+
+
+//    QMutexLocker locker(&m_mutex);
+
+//    if (role == Qt::DisplayRole && index.column() > 0 && index.column() < m_relations.count()
+//            && m_relations.value(index.column()).isValid())
+//    {
+//         m_displayCache[index.row()][index.column()] = value;
+//    }
+
+//    return QSqlQueryModel::setData(index, value, role);
+}
+
+bool FBaseSqlTableModel::submit()
+{
+    if (m_strategy == OnRowChange || m_strategy == OnFieldChange)
+        return submitAll();
+    return true;
+}
+
+bool FBaseSqlTableModel::submitAll()
+{
+    bool success = true;
+
+    foreach (int row, m_cache.keys()) {
+        // be sure cache *still* contains the row since overridden selectRow() could have called select()
+        CacheMap::iterator it = m_cache.find(row);
+        if (it == m_cache.end())
+            continue;
+
+        ModifiedRow &mrow = it.value();
+        if (mrow.submitted())
+            continue;
+
+        switch (mrow.op()) {
+        case Insert:
+            //success = insertRowIntoTable(mrow.rec());
+            break;
+        case Update:
+            success = updateRowInTable(row, mrow.rec());
+            break;
+        case Delete:
+            //success = deleteRowFromTable(row);
+            break;
+        case None:
+            Q_ASSERT_X(false, "FBaseSqlTableModel::submitAll()", "Invalid cache operation");
+            break;
+        }
+
+        if (success) {
+            if (m_strategy != OnManualSubmit && mrow.op() == Insert) {
+                int c = mrow.rec().indexOf(m_autoColumn);
+                if (c != -1 && !mrow.rec().isGenerated(c))
+                    mrow.setValue(c, m_editQuery.lastInsertId());
+            }
+            mrow.setSubmitted();
+            if (m_strategy != OnManualSubmit)
+                success = selectRow(row);
+        }
+
+        if (!success)
+            break;
     }
 
-    return QSqlQueryModel::setData(index, value, role);
+    if (success) {
+        if (m_strategy == OnManualSubmit)
+            success = select();
+    }
+
+    return success;
 }
 
 bool FBaseSqlTableModel::select(FetchMode fetchMode)
@@ -132,17 +255,20 @@ bool FBaseSqlTableModel::selectRow(int row)
 
 int FBaseSqlTableModel::setTable(const QString &table)
 {  
+    const int tabId(0);
+
     SqlTableJoin join;
     join.tableName = table;
-    join.baseRec = m_db.record(table);
     join.tableAlias = Sql::relTablePrefix(m_tables.size());
 
     if(m_tables.isEmpty())
         m_tables.append(join);
     else
-        m_tables.replace(0, join);
+        m_tables.replace(tabId, join);
 
-    return 0;
+    initRecordAndPrimaryIndex(tabId);
+
+    return tabId;
 }
 
 bool FBaseSqlTableModel::canFetchMore(const QModelIndex &parent) const
@@ -194,10 +320,14 @@ int FBaseSqlTableModel::addJoin(int relationTableId, const QString &relationColu
     join.tableAlias = Sql::relTablePrefix(m_tables.size());
     join.indexColumn = indexColumn;
     join.joinMode = joinMode;
-    join.baseRec = m_db.record(tableName);
 
     m_tables.append(join);
-    return m_tables.size() - 1;
+
+    const int tabId = m_tables.size() - 1;
+
+    initRecordAndPrimaryIndex(tabId);
+
+    return tabId;
 }
 
 int FBaseSqlTableModel::addJoin(const QString &relationColumn,
@@ -212,16 +342,21 @@ int FBaseSqlTableModel::addJoin(const QString &relationColumn,
     return -1;
 }
 
-void FBaseSqlTableModel::addField(int tableId, const QString &fieldName)
+void FBaseSqlTableModel::addField(int tableId, const QString &fieldName, const QString &fieldAlias)
 {
     if(tableId < m_tables.size())
-        m_tables[tableId].fields.append(fieldName);
+        m_tables[tableId].fields.append(SqlField(fieldName, fieldAlias));
 }
 
-void FBaseSqlTableModel::addField(const QString &fieldName)
+void FBaseSqlTableModel::addField(const QString &fieldName, const QString &fieldAlias)
 {
     int tabId = getTableIdByField(fieldName);
-    if(tabId >= 0) addField(tabId, fieldName);
+    if(tabId >= 0) addField(tabId, fieldName, fieldAlias);
+}
+
+void FBaseSqlTableModel::addExtraField(const QString &fieldName, const QString &fieldAlias)
+{
+    m_extrafields.append(SqlField(fieldName, fieldAlias));
 }
 
 int FBaseSqlTableModel::getTableIdByField(const QString &fieldName)
@@ -325,14 +460,22 @@ QString FBaseSqlTableModel::selectStatement() const
     {
         const SqlTableJoin &joinTable = m_tables.at(i);
 
-        foreach (const QString &name, joinTable.fields)
+        foreach (const SqlField &field, joinTable.fields)
         {
-            const QString tableField = m_db.driver()->escapeIdentifier(name, QSqlDriver::FieldName);
+            const QString tableField = Sql::as(field.name,
+                                               m_db.driver()->escapeIdentifier(field.alias, QSqlDriver::FieldName));
 
              fList = Sql::comma(fList, Sql::fullyQualifiedFieldName(joinTable.tableAlias, tableField));
         }
     }
 
+    foreach (const SqlField &field, m_extrafields)
+    {
+        const QString tableField = Sql::as(field.name,
+                                           m_db.driver()->escapeIdentifier(field.alias, QSqlDriver::FieldName));
+
+         fList = Sql::comma(fList, tableField);
+    }
 
     if (fList.isEmpty())
         return QString();
@@ -352,7 +495,63 @@ QString FBaseSqlTableModel::selectStatement() const
 
 bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
 {
-    return false;
+    emit beforeUpdate(row, QSqlRecord(values));
+
+    int fieldsCount(0);
+
+    for(int i = 0; i < m_tables.size(); ++i)
+    {
+        SqlTableJoin &table = m_tables[i];
+        QSqlRecord rec(table.baseRec);
+
+
+
+//        for(int r = 0; r < table.baseRec.count(); ++r)
+//        {
+//            qDebug() << "baseRec: " << table.baseRec.fieldName(r);
+//        }
+
+//        for(int r = 0; r < values.count(); ++r)
+//        {
+//            qDebug() << "values: " << values.fieldName(r);
+//        }
+
+        for(int f = 0; f < values.count(); ++f)
+        {
+            QString name = values.fieldName(f);
+            int idx = table.baseRec.indexOf(name);
+            if(idx >= 0)
+            {
+                rec.setGenerated(idx, values.isGenerated(f));
+            }
+
+        }
+
+        fieldsCount += values.count();
+
+
+
+        const QSqlRecord whereValues = primaryValues(i, row);
+        const bool prepStatement = false; //m_db.driver()->hasFeature(QSqlDriver::PreparedQueries);
+        const QString stmt = m_db.driver()->sqlStatement(QSqlDriver::UpdateStatement, table.tableName,
+                                                         rec, prepStatement);
+        const QString where = m_db.driver()->sqlStatement(QSqlDriver::WhereStatement, table.tableName,
+                                                           whereValues, prepStatement);
+
+        if (stmt.isEmpty() || where.isEmpty() || row < 0 || row >= rowCount()) {
+            setLastError(QSqlError(QLatin1String("No Fields to update"), QString(),
+                                     QSqlError::StatementError));
+            return false;
+        }
+
+        return exec(Sql::concat(stmt, where), prepStatement, rec, whereValues);
+    }
+
+
+
+
+
+
 //    QSqlRecord rec = values;
 
 //    for (int i = 0; i < rec.count(); ++i)
@@ -368,4 +567,52 @@ bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
 //    }
 
 //    return QSqlTableModel::updateRowInTable(row, rec);
+}
+
+bool FBaseSqlTableModel::exec(const QString &stmt, bool prepStatement,
+                              const QSqlRecord &rec, const QSqlRecord &whereValues)
+{
+    if (stmt.isEmpty())
+        return false;
+
+    // lazy initialization of editQuery
+    if (m_editQuery.driver() != m_db.driver())
+        m_editQuery = QSqlQuery(m_db);
+
+    // workaround for In-Process databases - remove all read locks
+    // from the table to make sure the editQuery succeeds
+//    if (m_db.driver()->hasFeature(QSqlDriver::SimpleLocking)) TODO
+//        const_cast<QSqlResult *>(query().result())->detachFromResultSet();
+
+    if (prepStatement) {
+        if (m_editQuery.lastQuery() != stmt) {
+            if (!m_editQuery.prepare(stmt)) {
+                setLastError(m_editQuery.lastError());
+                return false;
+            }
+        }
+        int i;
+        for (i = 0; i < rec.count(); ++i)
+            if (rec.isGenerated(i))
+                m_editQuery.addBindValue(rec.value(i));
+        for (i = 0; i < whereValues.count(); ++i)
+            if (whereValues.isGenerated(i) && !whereValues.isNull(i))
+                m_editQuery.addBindValue(whereValues.value(i));
+
+        if (!m_editQuery.exec()) {
+            setLastError(m_editQuery.lastError());
+            return false;
+        }
+    } else {
+        if (!m_editQuery.exec(stmt)) {
+            setLastError(m_editQuery.lastError());
+            return false;
+        }
+    }
+    return true;
+}
+
+Qt::ItemFlags FBaseSqlTableModel::flags(const QModelIndex &index) const
+{
+    return QSqlQueryModel::flags(index) | Qt::ItemIsEditable;
 }
