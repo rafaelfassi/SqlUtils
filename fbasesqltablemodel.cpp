@@ -28,7 +28,7 @@ private:
 
 FBaseSqlTableModel::FBaseSqlTableModel(QObject *parent, QSqlDatabase db)
     : QSqlQueryModel(parent),m_db(db), m_timerFetch(0), m_busyInsertingRows(false),
-      m_strategy(OnFieldChange)
+      m_strategy(OnRowChange)
 {
 }
 
@@ -495,13 +495,12 @@ QString FBaseSqlTableModel::selectStatement() const
 
 bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
 {
+    bool result(true);
     emit beforeUpdate(row, QSqlRecord(values));
 
-    int fieldsCount(0);
-
-    for(int i = 0; i < m_tables.size(); ++i)
+    for(int t = 0; t < m_tables.size(); ++t)
     {
-        SqlTableJoin &table = m_tables[i];
+        SqlTableJoin &table = m_tables[t];
         QSqlRecord rec(table.baseRec);
 
 
@@ -516,6 +515,12 @@ bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
 //            qDebug() << "values: " << values.fieldName(r);
 //        }
 
+        for(int f = 0; f < rec.count(); ++f)
+        {
+            rec.setGenerated(f, false);
+        }
+
+        int fieldsCount(0);
         for(int f = 0; f < values.count(); ++f)
         {
             QString name = values.fieldName(f);
@@ -523,15 +528,15 @@ bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
             if(idx >= 0)
             {
                 rec.setGenerated(idx, values.isGenerated(f));
+                rec.setValue(idx, values.value(f));
+                fieldsCount++;
             }
 
         }
 
-        fieldsCount += values.count();
+        if(!fieldsCount) continue;
 
-
-
-        const QSqlRecord whereValues = primaryValues(i, row);
+        const QSqlRecord whereValues = primaryValues(t, row);
         const bool prepStatement = false; //m_db.driver()->hasFeature(QSqlDriver::PreparedQueries);
         const QString stmt = m_db.driver()->sqlStatement(QSqlDriver::UpdateStatement, table.tableName,
                                                          rec, prepStatement);
@@ -541,11 +546,15 @@ bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
         if (stmt.isEmpty() || where.isEmpty() || row < 0 || row >= rowCount()) {
             setLastError(QSqlError(QLatin1String("No Fields to update"), QString(),
                                      QSqlError::StatementError));
-            return false;
+            continue;
         }
 
-        return exec(Sql::concat(stmt, where), prepStatement, rec, whereValues);
+        bool
+        result = exec(Sql::concat(stmt, where), prepStatement, rec, whereValues);
+        if(!result) return result;
     }
+
+    return result;
 
 
 
@@ -572,6 +581,8 @@ bool FBaseSqlTableModel::updateRowInTable(int row, const QSqlRecord &values)
 bool FBaseSqlTableModel::exec(const QString &stmt, bool prepStatement,
                               const QSqlRecord &rec, const QSqlRecord &whereValues)
 {
+    qDebug() << "exec stmt: " << stmt;
+
     if (stmt.isEmpty())
         return false;
 
